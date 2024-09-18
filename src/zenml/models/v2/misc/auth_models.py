@@ -13,7 +13,7 @@
 #  permissions and limitations under the License.
 """Models representing OAuth2 requests and responses."""
 
-from typing import Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -119,6 +119,9 @@ class OAuthTokenResponse(BaseModel):
     expires_in: Optional[int] = None
     refresh_token: Optional[str] = None
     scope: Optional[str] = None
+    cookie_name: Optional[str] = None
+    device_id: Optional[str] = None
+    device_metadata: Optional[Dict[str, Any]] = None
 
 
 class OAuthRedirectResponse(BaseModel):

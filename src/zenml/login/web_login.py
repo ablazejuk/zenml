@@ -14,6 +14,7 @@
 """Web login CLI support."""
 
 import platform
+import re
 import time
 import webbrowser
 from typing import TYPE_CHECKING, Optional, Union
@@ -41,7 +42,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
+def web_login(
+    url: Optional[str] = None, verify_ssl: Optional[Union[str, bool]] = None
+) -> "OAuthTokenResponse":
     """Implements the OAuth2 Device Authorization Grant flow.
 
     This function implements the client side of the OAuth2 Device Authorization
@@ -54,7 +57,8 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
     users to identify the ZenML client
 
     Args:
-        url: The URL of the OAuth2 server.
+        url: The URL of the OAuth2 server. If not provided, the ZenML Pro API
+            server is used by default.
         verify_ssl: Whether to verify the SSL certificate of the OAuth2 server.
             If a string is passed, it is interpreted as the path to a CA bundle
             file.
@@ -96,19 +100,37 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
         os=platform.system(),
     )
 
-    # Get rid of any trailing slashes to prevent issues when having double
-    # slashes in the URL
-    url = url.rstrip("/")
-    zenml_pro_server = ".zenml.io" in url
-
-    auth_url = url + API + VERSION_1 + DEVICE_AUTHORIZATION
+    zenml_pro_server = False
     zenml_pro_extra = ""
+    if not url:
+        # If no URL is provided, we use the ZenML Pro API server by default
+        zenml_pro_server = True
+        base_url = "https://cloudinfra.zenml.io"
+    elif match := re.match(
+        r"^(https://)?[a-z0-9]+-zenml\.([a-z]+\.)cloudinfra\.zenml\.io$",
+        url,
+    ):
+        # This is a ZenML Pro server. The device authentication is done through
+        # the ZenML Pro API.
+        zenml_pro_server = True
+        subdomain = match.group(2)
+        base_url = f"https://{subdomain}cloudapi.zenml.io"
+    else:
+        # Get rid of any trailing slashes to prevent issues when having double
+        # slashes in the URL
+        url = url.rstrip("/")
+        base_url = url
+
     if zenml_pro_server:
+        auth_url = base_url + AUTH + DEVICE_AUTHORIZATION
+        login_url = base_url + AUTH + LOGIN
         zenml_pro_extra = (
             ZENML_PRO_CONNECTION_ISSUES_SUSPENDED_PAUSED_TENANT_HINT
         )
-        url = "http://localhost:8080"
-        auth_url = url + AUTH + DEVICE_AUTHORIZATION
+    else:
+        auth_url = base_url + API + VERSION_1 + DEVICE_AUTHORIZATION
+        login_url = base_url + API + VERSION_1 + LOGIN
+
     try:
         response = requests.post(
             auth_url,
@@ -125,7 +147,7 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
         else:
             logger.info(f"Error: {response.status_code} {response.text}")
             raise AuthorizationException(
-                "Could not connect to API server. Please check the URL."
+                f"Could not connect to {base_url}. Please check the URL."
                 + zenml_pro_extra
             )
     except (requests.exceptions.JSONDecodeError, ValueError, TypeError):
@@ -136,7 +158,7 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
     except requests.exceptions.RequestException:
         logger.exception("Could not connect to API server.")
         raise AuthorizationException(
-            "Could not connect to API server. Please check the URL."
+            f"Could not connect to {base_url}. Please check the URL."
             + zenml_pro_extra
         )
 
@@ -148,7 +170,7 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
     if verification_uri.startswith("/"):
         # If the verification URI is a relative path, we need to add the base
         # URL to it
-        verification_uri = url + verification_uri
+        verification_uri = base_url + verification_uri
     webbrowser.open(verification_uri)
     logger.info(
         f"If your browser did not open automatically, please open the "
@@ -165,10 +187,6 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
     interval = auth_response.interval
     token_response: OAuthTokenResponse
     while True:
-        login_url = url + API + VERSION_1 + LOGIN
-        if zenml_pro_server:
-            login_url = url + AUTH + LOGIN
-
         response = requests.post(
             login_url,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -190,7 +208,7 @@ def web_login(url: str, verify_ssl: Union[str, bool]) -> "OAuthTokenResponse":
                 TypeError,
             ):
                 raise AuthorizationException(
-                    f"Error received from API server: {response.text}"
+                    f"Error received from {base_url}: {response.text}"
                 )
 
             if error_response.error == "authorization_pending":

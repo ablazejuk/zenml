@@ -4087,8 +4087,8 @@ class RestZenStore(BaseZenStore):
             raise AuthorizationException(
                 "Unable to refresh invalid API token. This is probably "
                 "because you're connected to your ZenML server with device "
-                "authentication. Rerunning `zenml connect --url "
-                f"{self.config.url}` should solve this issue. "
+                "authentication. Rerunning 'zenml connect --url "
+                f"{self.config.url}' should solve this issue. "
                 "If you're seeing this error from an automated workload, "
                 "you should probably use a service account to start that "
                 "workload to prevent this error"

@@ -399,8 +399,11 @@ def device_authorization(
     config = server_config()
     store = zen_store()
 
-    # Use this opportunity to delete expired devices
-    store.delete_expired_authorized_devices()
+    try:
+        # Use this opportunity to delete expired devices
+        store.delete_expired_authorized_devices()
+    except Exception:
+        logger.exception("Failed to delete expired devices")
 
     # Fetch additional details about the client from the user-agent header
     user_agent_header = request.headers.get("User-Agent")
