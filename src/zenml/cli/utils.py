@@ -253,10 +253,10 @@ def print_table(
 
 
 def print_pydantic_models(
-    models: Union[Page[T], List[T]],
+    models: Union[Page, List],
     columns: Optional[List[str]] = None,
     exclude_columns: Optional[List[str]] = None,
-    active_models: Optional[List[T]] = None,
+    active_models: Optional[List] = None,
     show_active: bool = False,
 ) -> None:
     """Prints the list of Pydantic models in a table.

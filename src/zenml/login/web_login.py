@@ -17,7 +17,7 @@ import platform
 import re
 import time
 import webbrowser
-from typing import TYPE_CHECKING, Optional, Union
+from typing import Optional, Union
 
 import requests
 
@@ -34,17 +34,15 @@ from zenml.constants import (
 )
 from zenml.exceptions import AuthorizationException, OAuthError
 from zenml.logger import get_logger
-
-if TYPE_CHECKING:
-    from zenml.models import OAuthTokenResponse
-
+from zenml.login.constants import ZENML_PRO_API_URL
+from zenml.login.token import APIToken
 
 logger = get_logger(__name__)
 
 
 def web_login(
     url: Optional[str] = None, verify_ssl: Optional[Union[str, bool]] = None
-) -> "OAuthTokenResponse":
+) -> APIToken:
     """Implements the OAuth2 Device Authorization Grant flow.
 
     This function implements the client side of the OAuth2 Device Authorization
@@ -55,6 +53,8 @@ def web_login(
     as the OAuth2 client ID value
     * additional information is added to the user agent header to be used by
     users to identify the ZenML client
+
+    Upon completion of the flow, the access token is saved in the token cache.
 
     Args:
         url: The URL of the OAuth2 server. If not provided, the ZenML Pro API
@@ -70,6 +70,7 @@ def web_login(
         AuthorizationException: If an error occurred during the authorization
             process.
     """
+    from zenml.login.token_cache import get_token_cache
     from zenml.models import (
         OAuthDeviceAuthorizationRequest,
         OAuthDeviceAuthorizationResponse,
@@ -100,28 +101,29 @@ def web_login(
         os=platform.system(),
     )
 
-    zenml_pro_server = False
+    zenml_pro = False
     zenml_pro_extra = ""
     if not url:
         # If no URL is provided, we use the ZenML Pro API server by default
-        zenml_pro_server = True
-        base_url = "https://cloudinfra.zenml.io"
-    elif match := re.match(
-        r"^(https://)?[a-z0-9]+-zenml\.([a-z]+\.)cloudinfra\.zenml\.io$",
-        url,
-    ):
-        # This is a ZenML Pro server. The device authentication is done through
-        # the ZenML Pro API.
-        zenml_pro_server = True
-        subdomain = match.group(2)
-        base_url = f"https://{subdomain}cloudapi.zenml.io"
+        zenml_pro = True
+        url = base_url = ZENML_PRO_API_URL
     else:
         # Get rid of any trailing slashes to prevent issues when having double
         # slashes in the URL
         url = url.rstrip("/")
-        base_url = url
+        if match := re.match(
+            r"^(https://)?[a-z0-9]+-zenml\.([a-z]+\.)cloudinfra\.zenml\.io$",
+            url,
+        ):
+            # This is a ZenML Pro server. The device authentication is done
+            # through the ZenML Pro API.
+            zenml_pro = True
+            subdomain = match.group(2)
+            base_url = f"https://{subdomain}cloudapi.zenml.io"
+        else:
+            base_url = url
 
-    if zenml_pro_server:
+    if zenml_pro:
         auth_url = base_url + AUTH + DEVICE_AUTHORIZATION
         login_url = base_url + AUTH + LOGIN
         zenml_pro_extra = (
@@ -198,7 +200,7 @@ def web_login(
             # The user has authorized the device, so we can extract the access token
             token_response = OAuthTokenResponse(**response.json())
             logger.info("Successfully logged in.")
-            return token_response
+            break
         elif response.status_code == 400:
             try:
                 error_response = OAuthError(**response.json())
@@ -235,3 +237,7 @@ def web_login(
             raise AuthorizationException(
                 f"Error: {response.status_code} {response.json()['error']}"
             )
+
+    # Save the token in the cache
+    token_cache = get_token_cache()
+    return token_cache.set_token(url, token_response)

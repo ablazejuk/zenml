@@ -11,6 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML CLI login utilities."""
+"""ZenML Pro base models."""
 
 
+from pydantic import BaseModel, ConfigDict
+
+
+class BaseRestAPIModel(BaseModel):
+    """Base class for all REST API models."""
+
+    model_config = ConfigDict(
+        # Allow extra attributes to allow compatibility with future versions
+        extra="allow",
+    )

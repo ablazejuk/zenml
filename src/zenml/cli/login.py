@@ -170,29 +170,29 @@ def start_local_server(
             )
 
 
-@click.option(
-    "--ngrok-token",
-    type=str,
-    default=None,
-    help="Specify an ngrok auth token to use for exposing the ZenML server.",
-)
-@cli.command("show", help="Show the ZenML dashboard.")
-def show(ngrok_token: Optional[str] = None) -> None:
-    """Show the ZenML dashboard.
+# @click.option(
+#     "--ngrok-token",
+#     type=str,
+#     default=None,
+#     help="Specify an ngrok auth token to use for exposing the ZenML server.",
+# )
+# @cli.command("show", help="Show the ZenML dashboard.")
+# def show(ngrok_token: Optional[str] = None) -> None:
+#     """Show the ZenML dashboard.
 
-    Args:
-        ngrok_token: An ngrok auth token to use for exposing the ZenML dashboard
-            on a public domain. Primarily used for accessing the dashboard in
-            Colab.
-    """
-    try:
-        zenml.show(ngrok_token=ngrok_token)
-    except RuntimeError as e:
-        cli_utils.error(str(e))
+#     Args:
+#         ngrok_token: An ngrok auth token to use for exposing the ZenML dashboard
+#             on a public domain. Primarily used for accessing the dashboard in
+#             Colab.
+#     """
+#     try:
+#         zenml.show(ngrok_token=ngrok_token)
+#     except RuntimeError as e:
+#         cli_utils.error(str(e))
 
 
-@cli.command("down", help="Shut down the local ZenML dashboard.")
-def down() -> None:
+@cli.command("logout", help="Shut down the local ZenML dashboard.")
+def logout() -> None:
     """Shut down the local ZenML dashboard."""
     server = get_active_deployment(local=True)
 
@@ -417,7 +417,15 @@ def login(
     store_dict: Dict[str, Any] = {}
 
     if url is None:
-        zenml_pro_token = web_login()
+        from zenml.login.pro.client import ZenMLProClient
+        web_login()
+        client = ZenMLProClient()
+        tenants = client.tenant.list()
+
+        cli_utils.print_pydantic_models(
+            tenants, columns=["id", "name", "status"]
+        )
+
 
     else:
         verify_ssl: Union[str, bool] = (
@@ -465,98 +473,98 @@ def login(
         cli_utils.warning(f"Authorization error: {e}")
 
 
-@cli.command("disconnect", help="Disconnect from a ZenML server.")
-def disconnect_server() -> None:
-    """Disconnect from a ZenML server."""
-    from zenml.zen_server.deploy.deployer import ServerDeployer
-    from zenml.zen_stores.base_zen_store import BaseZenStore
+# @cli.command("disconnect", help="Disconnect from a ZenML server.")
+# def disconnect_server() -> None:
+#     """Disconnect from a ZenML server."""
+#     from zenml.zen_server.deploy.deployer import ServerDeployer
+#     from zenml.zen_stores.base_zen_store import BaseZenStore
 
-    gc = GlobalConfiguration()
+#     gc = GlobalConfiguration()
 
-    url = gc.store_configuration.url
-    store_type = BaseZenStore.get_store_type(url)
-    if store_type == StoreType.REST:
-        deployer = ServerDeployer()
-        deployer.disconnect_from_server()
-    else:
-        gc.set_default_store()
-        cli_utils.declare("Restored default store configuration.")
+#     url = gc.store_configuration.url
+#     store_type = BaseZenStore.get_store_type(url)
+#     if store_type == StoreType.REST:
+#         deployer = ServerDeployer()
+#         deployer.disconnect_from_server()
+#     else:
+#         gc.set_default_store()
+#         cli_utils.declare("Restored default store configuration.")
 
 
-@cli.command("logs", help="Show the logs for the local or cloud ZenML server.")
-@click.option(
-    "--local",
-    is_flag=True,
-    help="Show the logs for the local ZenML server.",
-)
-@click.option(
-    "--follow",
-    "-f",
-    is_flag=True,
-    help="Continue to output new log data as it becomes available.",
-)
-@click.option(
-    "--tail",
-    "-t",
-    type=click.INT,
-    default=None,
-    help="Only show the last NUM lines of log output.",
-)
-@click.option(
-    "--raw",
-    "-r",
-    is_flag=True,
-    help="Show raw log contents (don't pretty-print logs).",
-)
-def logs(
-    local: bool = False,
-    follow: bool = False,
-    raw: bool = False,
-    tail: Optional[int] = None,
-) -> None:
-    """Display the logs for a ZenML server.
+# @cli.command("logs", help="Show the logs for the local or cloud ZenML server.")
+# @click.option(
+#     "--local",
+#     is_flag=True,
+#     help="Show the logs for the local ZenML server.",
+# )
+# @click.option(
+#     "--follow",
+#     "-f",
+#     is_flag=True,
+#     help="Continue to output new log data as it becomes available.",
+# )
+# @click.option(
+#     "--tail",
+#     "-t",
+#     type=click.INT,
+#     default=None,
+#     help="Only show the last NUM lines of log output.",
+# )
+# @click.option(
+#     "--raw",
+#     "-r",
+#     is_flag=True,
+#     help="Show raw log contents (don't pretty-print logs).",
+# )
+# def logs(
+#     local: bool = False,
+#     follow: bool = False,
+#     raw: bool = False,
+#     tail: Optional[int] = None,
+# ) -> None:
+#     """Display the logs for a ZenML server.
 
-    Args:
-        local: Whether to show the logs for the local ZenML server.
-        follow: Continue to output new log data as it becomes available.
-        tail: Only show the last NUM lines of log output.
-        raw: Show raw log contents (don't pretty-print logs).
-    """
-    server = get_active_deployment(local=True)
-    if not local:
-        remote_server = get_active_deployment(local=False)
-        if remote_server is not None:
-            server = remote_server
+#     Args:
+#         local: Whether to show the logs for the local ZenML server.
+#         follow: Continue to output new log data as it becomes available.
+#         tail: Only show the last NUM lines of log output.
+#         raw: Show raw log contents (don't pretty-print logs).
+#     """
+#     server = get_active_deployment(local=True)
+#     if not local:
+#         remote_server = get_active_deployment(local=False)
+#         if remote_server is not None:
+#             server = remote_server
 
-    if server is None:
-        cli_utils.error(
-            "The local ZenML dashboard is not running. Please call `zenml "
-            "up` first to start the ZenML dashboard locally."
-        )
+#     if server is None:
+#         cli_utils.error(
+#             "The local ZenML dashboard is not running. Please call `zenml "
+#             "up` first to start the ZenML dashboard locally."
+#         )
 
-    server_name = server.config.name
+#     server_name = server.config.name
 
-    from zenml.zen_server.deploy.deployer import ServerDeployer
+#     from zenml.zen_server.deploy.deployer import ServerDeployer
 
-    deployer = ServerDeployer()
+#     deployer = ServerDeployer()
 
-    cli_utils.declare(f"Showing logs for server: {server_name}")
+#     cli_utils.declare(f"Showing logs for server: {server_name}")
 
-    from zenml.zen_server.deploy.exceptions import (
-        ServerDeploymentNotFoundError,
-    )
+#     from zenml.zen_server.deploy.exceptions import (
+#         ServerDeploymentNotFoundError,
+#     )
 
-    try:
-        logs = deployer.get_server_logs(server_name, follow=follow, tail=tail)
-    except ServerDeploymentNotFoundError as e:
-        cli_utils.error(f"Server not found: {e}")
+#     try:
+#         logs = deployer.get_server_logs(server_name, follow=follow, tail=tail)
+#     except ServerDeploymentNotFoundError as e:
+#         cli_utils.error(f"Server not found: {e}")
 
-    for line in logs:
-        # don't pretty-print log lines that are already pretty-printed
-        if raw or line.startswith("\x1b["):
-            console.print(line, markup=False)
-        else:
-            try:
-                console.print(line)
-            except MarkupError:
-                console.print(line, markup=False)
+#     for line in logs:
+#         # don't pretty-print log lines that are already pretty-printed
+#         if raw or line.startswith("\x1b["):
+#             console.print(line, markup=False)
+#         else:
+#             try:
+#                 console.print(line)
+#             except MarkupError:
+#                 console.print(line, markup=False)

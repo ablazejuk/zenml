@@ -1,4 +1,4 @@
-#  Copyright (c) ZenML GmbH 2024. All Rights Reserved.
+#  Copyright (c) ZenML GmbH 2023. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -11,6 +11,16 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML CLI login utilities."""
+"""ZenML CLI login constants."""
 
+import os
 
+ENV_ZENML_PRO_API_URL = "ZENML_PRO_API_URL"
+DEFAULT_ZENML_PRO_API_URL = "https://cloudapi.zenml.io"
+
+ZENML_PRO_API_URL = os.getenv(ENV_ZENML_PRO_API_URL, default=DEFAULT_ZENML_PRO_API_URL)
+
+TOKEN_CACHE_FILENAME = "token_cache.yaml"
+
+# How long to cache tokens after their expiration date before evicting them
+TOKEN_CACHE_EVICTION_TIME = 60 * 60 * 24 * 7  # 1 week

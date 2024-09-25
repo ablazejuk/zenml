@@ -11,6 +11,22 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML CLI login utilities."""
+"""ZenML Pro organization models."""
+
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
+from zenml.login.pro.models import BaseRestAPIModel
 
 
+class OrganizationRead(BaseRestAPIModel):
+    """Model for viewing organizations."""
+
+    id: UUID
+
+    name: str
+    description: Optional[str] = None
+
+    created: datetime
+    updated: datetime

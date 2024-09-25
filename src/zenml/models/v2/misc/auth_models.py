@@ -16,7 +16,7 @@
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from zenml.enums import OAuthGrantTypes
 
@@ -122,6 +122,11 @@ class OAuthTokenResponse(BaseModel):
     cookie_name: Optional[str] = None
     device_id: Optional[str] = None
     device_metadata: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(
+        # Allow extra attributes to allow compatibility with different versions
+        extra="allow",
+    )
 
 
 class OAuthRedirectResponse(BaseModel):
