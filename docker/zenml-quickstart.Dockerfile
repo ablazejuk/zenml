@@ -1,20 +1,19 @@
-ARG PYTHON_VERSION=3.11
-ARG ZENML_VERSION=latest
+ARG BASE_REPO="bcdurak"
+ARG ZENML_VERSION
 
-FROM zenmldocker/zenml:${ZENML_VERSION}-py${PYTHON_VERSION} as base
+FROM ${BASE_REPO}/zenml:release-base AS base
 
 # Set the working directory
 WORKDIR /app
 
 # Redeclare ARGs
-ARG PYTHON_VERSION
 ARG ZENML_VERSION
 ARG CLOUD_PROVIDER
 
 # Install the Python requirements
 RUN pip install uv
 
-RUN uv pip install zenml${ZENML_VERSION:+==$ZENML_VERSION} notebook pyarrow datasets transformers transformers[torch] torch sentencepiece
+RUN uv pip install "git+https://github.com/zenml-io/zenml.git@misc/prepare-release-$ZENML_VERSION" notebook pyarrow datasets transformers transformers[torch] torch sentencepiece
 
 RUN echo "Cloud Provider: $CLOUD_PROVIDER";
 # Install cloud-specific ZenML integrations
