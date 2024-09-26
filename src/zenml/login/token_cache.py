@@ -11,7 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML server API token cache support."""
+"""ZenML login token cache support."""
 
 import os
 from datetime import datetime, timedelta, timezone
@@ -24,6 +24,7 @@ from zenml.login.constants import (
     TOKEN_CACHE_EVICTION_TIME,
     TOKEN_CACHE_FILENAME,
 )
+from zenml.login.pro.constants import ZENML_PRO_API_URL
 from zenml.login.token import APIToken
 from zenml.models import OAuthTokenResponse
 from zenml.utils import yaml_utils
@@ -69,7 +70,12 @@ class APITokenCache(metaclass=SingletonMetaClass):
         token_cache = {}
 
         if fileio.exists(cache_file):
-            token_cache = yaml_utils.read_yaml(cache_file)
+            try:
+                token_cache = yaml_utils.read_yaml(cache_file)
+            except Exception as e:
+                logger.error(
+                    f"Failed to load token cache file {cache_file}: {e}. "
+                )
             self.last_modified_time = os.path.getmtime(cache_file)
 
         if token_cache is None:
@@ -95,7 +101,9 @@ class APITokenCache(metaclass=SingletonMetaClass):
         """Save the current token cache to the YAML file."""
         cache_file = self._cache_file
         token_cache = {
-            server_url: token.model_dump(exclude_none=True, exclude_unset=True)
+            server_url: token.model_dump(
+                mode="json", exclude_none=True, exclude_unset=True
+            )
             for server_url, token in self.tokens.items()
             # Evict tokens that have expired past the eviction time
             if not token.expires_at
@@ -138,6 +146,27 @@ class APITokenCache(metaclass=SingletonMetaClass):
         if token and (not token.expired or allow_expired):
             return token
         return None
+
+    def get_pro_token(self, allow_expired: bool = False) -> Optional[APIToken]:
+        """Retrieve a valid token from the cache for the ZenML Pro API server.
+
+        Args:
+            allow_expired: Whether to allow expired tokens to be returned. The
+                default behavior is to return None if a token does exist but is
+                expired.
+
+        Returns:
+            The cached token if it exists and is not expired, None otherwise.
+        """
+        return self.get_token(ZENML_PRO_API_URL, allow_expired)
+
+    def has_valid_pro_authentication(self) -> bool:
+        """Check if a valid token for the ZenML Pro API server is cached.
+
+        Returns:
+            bool: True if a valid token is cached, False otherwise.
+        """
+        return self.get_token(ZENML_PRO_API_URL) is not None
 
     def set_token(
         self, server_url: str, token_response: OAuthTokenResponse
@@ -183,6 +212,16 @@ class APITokenCache(metaclass=SingletonMetaClass):
         self.save_cache()
 
         return api_token
+
+    def clear_token(self, server_url: str) -> None:
+        """Delete a token from the cache for a specific server URL.
+
+        Args:
+            server_url: The server URL for which to delete the token.
+        """
+        if server_url in self.tokens:
+            del self.tokens[server_url]
+            self.save_cache()
 
 
 def get_token_cache() -> APITokenCache:

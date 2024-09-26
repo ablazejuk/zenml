@@ -1,4 +1,4 @@
-#  Copyright (c) ZenML GmbH 2023. All Rights Reserved.
+#  Copyright (c) ZenML GmbH 2024. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -11,7 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""Web login CLI support."""
+"""ZenML OAuth2 device authorization grant client support."""
 
 import platform
 import re
@@ -34,7 +34,8 @@ from zenml.constants import (
 )
 from zenml.exceptions import AuthorizationException, OAuthError
 from zenml.logger import get_logger
-from zenml.login.constants import ZENML_PRO_API_URL
+from zenml.login.pro.constants import ZENML_PRO_API_URL
+from zenml.login.pro.utils import is_zenml_pro_server
 from zenml.login.token import APIToken
 
 logger = get_logger(__name__)
@@ -79,9 +80,8 @@ def web_login(
         OAuthTokenResponse,
     )
 
-    auth_request = OAuthDeviceAuthorizationRequest(
-        client_id=GlobalConfiguration().user_id
-    )
+    token_cache = get_token_cache()
+
     # Make a request to the OAuth2 server to get the device code and user code.
     # The client ID used for the request is the unique ID of the ZenML client.
     response: Optional[requests.Response] = None
@@ -111,17 +111,23 @@ def web_login(
         # Get rid of any trailing slashes to prevent issues when having double
         # slashes in the URL
         url = url.rstrip("/")
-        if match := re.match(
-            r"^(https://)?[a-z0-9]+-zenml\.([a-z]+\.)cloudinfra\.zenml\.io$",
-            url,
-        ):
+        if is_zenml_pro_server(url):
             # This is a ZenML Pro server. The device authentication is done
             # through the ZenML Pro API.
             zenml_pro = True
-            subdomain = match.group(2)
-            base_url = f"https://{subdomain}cloudapi.zenml.io"
+            base_url = ZENML_PRO_API_URL
         else:
             base_url = url
+
+    auth_request = OAuthDeviceAuthorizationRequest(
+        client_id=GlobalConfiguration().user_id
+    )
+
+    # If an existing token is found in the cache, we reuse its device ID
+    # to avoid creating a new device ID for the same device.
+    existing_token = token_cache.get_token(url)
+    if existing_token and existing_token.device_id:
+        auth_request.device_id = existing_token.device_id
 
     if zenml_pro:
         auth_url = base_url + AUTH + DEVICE_AUTHORIZATION
@@ -140,7 +146,7 @@ def web_login(
                 "Content-Type": "application/x-www-form-urlencoded",
                 "User-Agent": user_agent_header.encode(),
             },
-            data=auth_request.model_dump(),
+            data=auth_request.model_dump(exclude_none=True),
             verify=verify_ssl,
             timeout=DEFAULT_HTTP_TIMEOUT,
         )
@@ -239,5 +245,4 @@ def web_login(
             )
 
     # Save the token in the cache
-    token_cache = get_token_cache()
     return token_cache.set_token(url, token_response)

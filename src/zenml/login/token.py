@@ -11,10 +11,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML server API token models."""
+"""ZenML login token models."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,7 +28,7 @@ class APIToken(BaseModel):
     expires_at: Optional[datetime] = None
     leeway: Optional[int] = None
     cookie_name: Optional[str] = None
-    device_id: Optional[str] = None
+    device_id: Optional[UUID] = None
     device_metadata: Optional[Dict[str, Any]] = None
 
     @property

@@ -223,6 +223,8 @@ def print_table(
         caption: Caption of the table.
         columns: Optional column configurations to be used in the table.
     """
+    from rich.text import Text
+
     column_keys = {key: None for dict_ in obj for key in dict_}
     column_names = [columns.get(key, key.upper()) for key in column_keys]
     rich_table = table.Table(
@@ -241,10 +243,16 @@ def print_table(
             if key is None:
                 values.append(None)
             else:
-                value = str(dict_.get(key) or " ")
-                # escape text when square brackets are used
-                if "[" in value:
-                    value = escape(value)
+                v = dict_.get(key) or " "
+                if isinstance(v, str) and (
+                    v.startswith("http://") or v.startswith("https://")
+                ):
+                    value = Text("[URL]", style=f"link {v}")
+                else:
+                    value = str(v)
+                    # escape text when square brackets are used
+                    if "[" in value:
+                        value = escape(value)
                 values.append(value)
         rich_table.add_row(*values)
     if len(rich_table.columns) > 1:
@@ -258,6 +266,8 @@ def print_pydantic_models(
     exclude_columns: Optional[List[str]] = None,
     active_models: Optional[List] = None,
     show_active: bool = False,
+    show_index: bool = False,
+    rename_columns: Dict[str, str] = {},
 ) -> None:
     """Prints the list of Pydantic models in a table.
 
@@ -270,6 +280,8 @@ def print_pydantic_models(
         active_models: Optional list of active models of the given type T.
         show_active: Flag to decide whether to append the active model on the
             top of the list.
+        show_index: Flag to decide whether to show the index column.
+        rename_columns: Optional dictionary to rename columns.
     """
     if exclude_columns is None:
         exclude_columns = list()
@@ -278,6 +290,8 @@ def print_pydantic_models(
     if active_models is None:
         show_active_column = False
         active_models = list()
+
+    model_index = 0
 
     def __dictify(model: T) -> Dict[str, str]:
         """Helper function to map over the list to turn Models into dicts.
@@ -288,6 +302,8 @@ def print_pydantic_models(
         Returns:
             Dict of model attributes.
         """
+        nonlocal model_index
+        model_index += 1
         # Explicitly defined columns take precedence over exclude columns
         if not columns:
             if isinstance(model, BaseIdentifiedResponse):
@@ -324,8 +340,14 @@ def print_pydantic_models(
 
         items: Dict[str, Any] = {}
 
+        # Add the index column if requested
+        if show_index:
+            items["#"] = str(model_index)
+
         for k in include_columns:
             value = getattr(model, k)
+            if k in rename_columns:
+                k = rename_columns[k]
             # In case the response model contains nested `BaseResponse`s
             #  we want to attempt to represent them by name, if they contain
             #  such a field, else the id is used
@@ -350,6 +372,7 @@ def print_pydantic_models(
                 items[k] = [str(v) for v in value]
             else:
                 items[k] = str(value)
+
         # prepend an active marker if a function to mark active was passed
         if not active_models and not show_active:
             return items

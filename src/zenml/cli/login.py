@@ -17,21 +17,20 @@ import ipaddress
 import os
 import sys
 from typing import Any, Dict, Optional, Union
+from uuid import UUID
 
 import click
-from rich.errors import MarkupError
 
 import zenml
 from zenml.cli import utils as cli_utils
 from zenml.cli.cli import cli
 from zenml.config.global_config import GlobalConfiguration
-from zenml.console import console
 from zenml.constants import ENV_ZENML_LOCAL_SERVER
 from zenml.enums import ServerProviderType, StoreType
 from zenml.exceptions import AuthorizationException, IllegalOperationError
 from zenml.logger import get_logger
 from zenml.login.web_login import web_login
-from zenml.zen_server.utils import get_active_deployment
+from zenml.zen_server.utils import get_local_server
 
 logger = get_logger(__name__)
 
@@ -109,7 +108,7 @@ def start_local_server(
 
     deployer = ServerDeployer()
 
-    server = get_active_deployment(local=True)
+    server = get_local_server(local=True)
     if server and server.config.provider != provider:
         deployer.remove_server(LOCAL_ZENML_SERVER_NAME)
 
@@ -194,7 +193,7 @@ def start_local_server(
 @cli.command("logout", help="Shut down the local ZenML dashboard.")
 def logout() -> None:
     """Shut down the local ZenML dashboard."""
-    server = get_active_deployment(local=True)
+    server = get_local_server(local=True)
 
     if not server:
         cli_utils.declare("The local ZenML dashboard is not running.")
@@ -232,8 +231,7 @@ def logout() -> None:
         zenml connect --config=/path/to/zenml_config.yaml
 
       * when no arguments are supplied, ZenML will attempt to connect to the
-        last ZenML server deployed from the local host using the 'zenml deploy'
-        command.
+        ZenML Pro.
 
     The configuration file must be a YAML or JSON file with the following
     attributes:
@@ -418,15 +416,58 @@ def login(
 
     if url is None:
         from zenml.login.pro.client import ZenMLProClient
-        web_login()
+        from zenml.login.pro.tenant.models import TenantStatus
+
+        try:
+            token = web_login()
+        except AuthorizationException as e:
+            cli_utils.error(f"Authorization error: {e}")
+
+        tenant_id: Optional[str] = None
+        if token.device_metadata:
+            tenant_id = token.device_metadata.get("tenant_id")
+
+        if tenant_id is None:
+            # This is not really supposed to happen, because the implementation
+            # of the web login workflow should always return a tenant ID, but
+            # we're handling it just in case.
+            cli_utils.declare(
+                "A valid server was not selected during the login process. "
+                "Please run `zenml server list` to display a list of available "
+                "servers and then `zenml server connect` to connect to a server."
+            )
+            return
+
         client = ZenMLProClient()
-        tenants = client.tenant.list()
 
-        cli_utils.print_pydantic_models(
-            tenants, columns=["id", "name", "status"]
-        )
+        while True:
+            tenant = client.tenant.get(UUID(tenant_id))
 
+            if tenant.status == TenantStatus.FAILED:
+                cli_utils.error(
+                    "Your ZenML Pro server is currently in a failed state. "
+                    "If you are the server administrator, please manage the "
+                    "server state from the ZenML Pro dashboard, otherwise "
+                    "please contact your server administrator."
+                )
 
+            if tenant.desired_state == TenantStatus.DEACTIVATED:
+                cli_utils.error("Your ZenML Pro server has been deactivated.")
+
+            # Next steps are different depending on the tenant status and version
+            if tenant.status == TenantStatus.AVAILABLE:
+                if tenant.version != zenml.__version__:  # type: ignore
+                    cli_utils.warning(
+                        f"Your ZenML client version ({zenml.__version__}) does "
+                        f"not match the ZenML Pro server version "
+                        f"({tenant.version}). This may cause compatibility "
+                        "issues. You should update your ZenML client library to "
+                        "match the server version."
+                    )
+                break
+
+        store_dict["url"] = tenant.url
+        store_type = StoreType.REST
     else:
         verify_ssl: Union[str, bool] = (
             ssl_ca_cert if ssl_ca_cert is not None else not no_verify_ssl
@@ -444,29 +485,16 @@ def login(
                 store_dict["api_token"] = web_login(
                     url=url, verify_ssl=verify_ssl
                 )
-        elif store_type == StoreType.SQL:
-            if not username:
-                username = click.prompt("Username", type=str)
 
-                store_dict["username"] = username
-
-                if password is None:
-                    password = click.prompt(
-                        f"Password for user {username} (press ENTER for empty password)",
-                        default="",
-                        hide_input=True,
-                    )
-                store_dict["password"] = password
-
-        store_config_class = BaseZenStore.get_store_config_class(store_type)
-        assert store_config_class is not None
+    store_config_class = BaseZenStore.get_store_config_class(store_type)
+    assert store_config_class is not None
 
     store_config = store_config_class.model_validate(store_dict)
     try:
         GlobalConfiguration().set_store(store_config)
     except IllegalOperationError:
         cli_utils.warning(
-            f"User '{username}' does not have sufficient permissions to "
+            f"You do not have sufficient permissions to "
             f"access the server at '{url}'."
         )
     except AuthorizationException as e:

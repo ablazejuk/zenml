@@ -18,6 +18,8 @@ from uuid import UUID
 
 from pydantic import Field
 
+from zenml.login import pro
+from zenml.login.pro.constants import ZENML_PRO_URL
 from zenml.login.pro.models import BaseRestAPIModel
 from zenml.login.pro.organization.models import OrganizationRead
 from zenml.utils.enum_utils import StrEnum
@@ -69,6 +71,40 @@ class TenantStatusReason(StrEnum):
     SUBSCRIPTION_ENDED = "subscription_ended"
 
 
+class ZenMLServiceConfiguration(BaseRestAPIModel):
+    """ZenML service configuration."""
+
+    version: str = Field(
+        description="The ZenML version.",
+    )
+
+
+class ZenMLServiceStatus(BaseRestAPIModel):
+    """ZenML service status."""
+
+    server_url: str = Field(
+        description="The ZenML server URL.",
+    )
+    version: Optional[str] = Field(
+        default=None,
+        description="The ZenML server version.",
+    )
+
+
+class ZenMLServiceRead(BaseRestAPIModel):
+    """Pydantic Model for viewing a ZenML service."""
+
+    configuration: ZenMLServiceConfiguration = Field(
+        description="The service configuration."
+    )
+
+    status: Optional[ZenMLServiceStatus] = Field(
+        default=None,
+        description="Information about the service status. Only set if the "
+        "service is deployed and active.",
+    )
+
+
 class TenantRead(BaseRestAPIModel):
     """Pydantic Model for viewing a Tenant."""
 
@@ -88,3 +124,60 @@ class TenantRead(BaseRestAPIModel):
     status: str = Field(
         description="The current operational state of the tenant."
     )
+    zenml_service: ZenMLServiceRead = Field(description="The ZenML service.")
+
+    @property
+    def organization_id(self) -> UUID:
+        """Get the organization id.
+
+        Returns:
+            The organization id.
+        """
+        return self.organization.id
+
+    @property
+    def organization_name(self) -> str:
+        """Get the organization name.
+
+        Returns:
+            The organization name.
+        """
+        return self.organization.name
+
+    @property
+    def version(self) -> Optional[str]:
+        """Get the ZenML service version.
+
+        Returns:
+            The ZenML service version.
+        """
+        version = self.zenml_service.configuration.version
+        if self.zenml_service.status and self.zenml_service.status.version:
+            version = self.zenml_service.status.version
+
+        return version
+
+    @property
+    def url(self) -> Optional[str]:
+        """Get the ZenML server URL.
+
+        Returns:
+            The ZenML server URL, if available.
+        """
+        return (
+            self.zenml_service.status.server_url
+            if self.zenml_service.status
+            else None
+        )
+
+    @property
+    def dashboard_url(self) -> str:
+        """Get the URL to the ZenML Pro dashboard for this tenant.
+
+        Returns:
+            The URL to the ZenML Pro dashboard for this tenant.
+        """
+        return (
+            ZENML_PRO_URL
+            + f"/organizations/{str(self.organization_id)}/tenants/{str(self.id)}"
+        )

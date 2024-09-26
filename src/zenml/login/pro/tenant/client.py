@@ -16,9 +16,13 @@
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from pytz import VERSION
+
+from zenml.constants import API, LOGIN, VERSION_1
 from zenml.logger import get_logger
 from zenml.login.pro.client import ZenMLProClient
 from zenml.login.pro.tenant.models import TenantRead, TenantStatus
+from zenml.models import OAuthTokenResponse
 
 logger = get_logger(__name__)
 
@@ -60,6 +64,7 @@ class TenantClient:
         limit: int = 20,
         organization_id: Optional[UUID] = None,
         status: Optional[TenantStatus] = None,
+        member_only: bool = False,
     ) -> List[TenantRead]:
         """List tenants.
 
@@ -67,7 +72,9 @@ class TenantClient:
             offset: Offset to use for filtering.
             limit: Limit used for filtering.
             organization_id: Organization ID to filter by.
-            status: Filter for only tenants with this status
+            status: Filter for only tenants with this status.
+            member_only: If True, only list tenants where the user is a member
+                (i.e. users that can connect to the tenant).
 
         Returns:
             List of tenants.
@@ -79,4 +86,5 @@ class TenantClient:
             limit=limit,
             organization_id=organization_id,
             status=status,
+            member_only=member_only,
         )

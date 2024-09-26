@@ -11,9 +11,18 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 #  or implied. See the License for the specific language governing
 #  permissions and limitations under the License.
-"""ZenML login constants."""
+"""ZenML Pro login constants."""
 
-TOKEN_CACHE_FILENAME = "token_cache.yaml"
+import os
 
-# How long to cache tokens after their expiration date before evicting them
-TOKEN_CACHE_EVICTION_TIME = 60 * 60 * 24 * 7  # 1 week
+ENV_ZENML_PRO_API_URL = "ZENML_PRO_API_URL"
+DEFAULT_ZENML_PRO_API_URL = "https://cloudapi.zenml.io"
+
+ZENML_PRO_API_URL = os.getenv(
+    ENV_ZENML_PRO_API_URL, default=DEFAULT_ZENML_PRO_API_URL
+)
+
+ENV_ZENML_PRO_URL = "ZENML_PRO_URL"
+DEFAULT_ZENML_PRO_URL = "https://cloud.zenml.io"
+
+ZENML_PRO_URL = os.getenv(ENV_ZENML_PRO_URL, default=DEFAULT_ZENML_PRO_URL)

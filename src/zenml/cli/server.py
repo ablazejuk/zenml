@@ -16,20 +16,23 @@
 import ipaddress
 import os
 import sys
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+import uuid
 
 import click
+from ray import get
+from sqlalchemy import column
 import yaml
 from rich.errors import MarkupError
 
 import zenml
 from zenml.cli import utils as cli_utils
-from zenml.cli.cli import cli
+from zenml.cli.cli import TagGroup, cli
 from zenml.client import Client
 from zenml.config.global_config import GlobalConfiguration
 from zenml.console import console
 from zenml.constants import ENV_ZENML_LOCAL_SERVER
-from zenml.enums import ServerProviderType, StoreType
+from zenml.enums import CliCategories, ServerProviderType, StoreType
 from zenml.exceptions import AuthorizationException, IllegalOperationError
 from zenml.logger import get_logger
 from zenml.utils import yaml_utils
@@ -657,3 +660,298 @@ def logs(
                 console.print(line)
             except MarkupError:
                 console.print(line, markup=False)
+
+
+@cli.group(cls=TagGroup, tag=CliCategories.MANAGEMENT_TOOLS)
+def server() -> None:
+    """Commands for managing ZenML servers."""
+
+
+@server.command(
+    "list",
+    help="""List all ZenML servers that this client is logged in to.
+    
+    This list includes the following:
+
+      * ZenML Pro servers that the authenticated user is a member of. The client
+        needs to be logged to ZenML Pro via `zenml login` to access these servers.
+
+      * ZenML servers that the client has already logged in to to via
+        `zenml login --url`.
+
+      * the local ZenML server started with `zenml login --local`, if one is
+        running.
+
+    This list does not include ZenML servers that are not accessible: servers
+    that are not running, or are running ZenML versions incompatible with the
+    client, or are no longer accessible due to an expired authentication. To
+    include these servers in the list, use the `--all` flag.
+    """,
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show verbose output.",
+)
+@click.option(
+    "--all",
+    "-a",
+    is_flag=True,
+    help="Show all ZenML servers, including those that are not running, "
+    "or that are running ZenML versions that are not compatible with the "
+    "client, or those with an expired authentication.",
+)
+def server_list(verbose: bool = False, all: bool = False) -> None:
+    """List all ZenML servers that this client is authorized to access.
+
+    Args:
+        verbose: Whether to show verbose output.
+        all: Whether to show all ZenML servers.
+    """
+    from zenml.login.pro.client import ZenMLProClient
+    from zenml.login.pro.tenant.models import TenantRead, TenantStatus
+    from zenml.login.token_cache import get_token_cache
+
+    token_cache = get_token_cache()
+    pro_token = token_cache.get_pro_token(allow_expired=True)
+    current_store_config = GlobalConfiguration().store_configuration
+
+    if pro_token:
+        try:
+            client = ZenMLProClient()
+            servers = client.tenant.list(member_only=True)
+        except AuthorizationException as e:
+            cli_utils.warning(f"ZenML Pro authorization error: {e}")
+        else:
+            if not all:
+                servers = [
+                    s
+                    for s in servers
+                    if s.status == TenantStatus.AVAILABLE
+                    and s.version == zenml.__version__
+                ]
+
+            if not servers:
+                cli_utils.declare("No ZenML Pro servers found.")
+                if not all:
+                    cli_utils.declare(
+                        "Hint: use the `--all` flag to show all ZenML servers, "
+                        "including those that the client is not currently "
+                        "accessible."
+                    )
+            else:
+                if verbose:
+                    columns = [
+                        "id",
+                        "name",
+                        "organization_name",
+                        "organization_id",
+                        "version",
+                        "status",
+                        "state_reason",
+                        "dashboard_url",
+                    ]
+                elif all:
+                    columns = [
+                        "id",
+                        "name",
+                        "organization_name",
+                        "version",
+                        "status",
+                        "dashboard_url",
+                    ]
+                else:
+                    columns = [
+                        "id",
+                        "name",
+                        "organization_name",
+                        "dashboard_url",
+                    ]
+
+                # Figure out if the client is already connected to one of the
+                # servers in the list
+                current_server: List[TenantRead] = []
+                if current_store_config.type == StoreType.REST:
+                    current_server = [
+                        s for s in servers if s.url == current_store_config.url
+                    ]
+
+                cli_utils.print_pydantic_models(
+                    servers,
+                    columns=columns,
+                    rename_columns={
+                        "organization_name": "organization",
+                        "organization_id": "organization ID",
+                        "dashboard_url": "URL",
+                        "state_reason": "state reason",
+                    },
+                    active_models=current_server,
+                    show_active=True,
+                )
+
+
+@server.command(
+    "connect",
+    help="""Connect to a remote ZenML server.
+
+    Use this command to connect the client to one of the ZenML servers that the
+    client is already logged in to. The list of servers that can be used with
+    this CLI command can be fetched by running `zenml server list`.
+
+    The server argument can be one of the following:
+
+    * The name or UUID of a ZenML Pro server to connect to.
+    * The URL of a ZenML server to connect to.
+    * 'local' to connect to the local ZenML server, if running.
+
+    Examples:
+
+        * to connect to a ZenML Pro server by name:
+
+            zenml server connect my-zenml-server
+
+        * to connect to a ZenML Pro server by URL:
+
+            zenml server connect http://zenml.example.com:8080
+
+        * to connect to the local ZenML server:
+
+            zenml server connect local
+    """,
+)
+@click.argument("server", type=str, required=True)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force the client to connect to a ZenML server with an incompatible "
+    "version.",
+)
+def server_connect(server: str, force: bool = False) -> None:
+    """Connect to a remote ZenML server.
+
+    Args:
+        server: The name of the ZenML server to connect to.
+        force: Whether to force the client to connect to a server with an
+            incompatible version.
+    """
+    from zenml.config.store_config import StoreConfiguration
+    from zenml.login.pro.client import ZenMLProClient
+    from zenml.login.pro.tenant.models import TenantRead, TenantStatus
+    from zenml.login.pro.utils import is_zenml_pro_server
+    from zenml.login.token_cache import get_token_cache
+
+    token_cache = get_token_cache()
+
+    def connect_to_server(url: str) -> None:
+        """Connect the client to a ZenML server.
+
+        Args:
+            url: The URL of the ZenML server to connect to.
+        """
+        store_config = StoreConfiguration(
+            url=url,
+            type=StoreType.REST,
+        )
+        try:
+            GlobalConfiguration().set_store(store_config)
+        except IllegalOperationError:
+            cli_utils.error(
+                f"You do not have sufficient permissions to "
+                f"access the server at '{url}'."
+            )
+        except AuthorizationException as e:
+            cli_utils.error(f"Authorization error: {e}")
+
+        cli_utils.declare(f"Connected to ZenML server: {url}")
+
+    def connect_to_pro_server(server: TenantRead) -> None:
+        """Connect the client to a ZenML Pro server.
+
+        Args:
+            server: The ZenML Pro server to connect to.
+        """
+        if server.status != TenantStatus.AVAILABLE or not server.url:
+            cli_utils.error(
+                f"The ZenML Pro server '{server.name}' is not currently "
+                f"running. Visit the ZenML Pro dashboard to manage the server "
+                f"status at: {server.dashboard_url}"
+            )
+
+        if server.version and server.version != zenml.__version__:
+            if not force:
+                cli_utils.error(
+                    f"The ZenML Pro server '{server.name}' is running ZenML "
+                    f"version {server.version}, which is incompatible with the "
+                    f"client version {zenml.__version__}. To connect to this "
+                    f"server, update the client to the server's version or pass "
+                    f"the `--force` flag to connect anyway."
+                )
+
+            cli_utils.warning(
+                f"The ZenML Pro server '{server.name}' is running ZenML "
+                f"version {server.version}, which is incompatible with the "
+                f"client version {zenml.__version__}."
+            )
+
+        connect_to_server(server.url)
+
+    try:
+        client = ZenMLProClient()
+        servers = client.tenant.list(member_only=True)
+    except AuthorizationException:
+        servers = []
+
+    if server.startswith("http://") or server.startswith("https://"):
+        # The server argument is a URL
+        if is_zenml_pro_server(server):
+            # The server is a ZenML Pro server; look up the server by URL
+            servers = [s for s in servers if s.url == server.rstrip("/")]
+            if not servers:
+                cli_utils.error(
+                    f"No ZenML Pro server found with URL '{server}'."
+                )
+            connect_to_pro_server(servers[0])
+            return
+
+        # The server is not a ZenML Pro server; look up a cached API token
+        token = token_cache.get_token(server, allow_expired=True)
+        if not token:
+            cli_utils.error(
+                f"The client is not logged in to a ZenML server with URL "
+                f"'{server}'. Please log in to the server first using "
+                "`zenml login {server}`."
+            )
+        if token.expired:
+            cli_utils.error(
+                f"The client's authentication for the server with URL "
+                f"'{server}' has expired. Please log in to the server again "
+                f"using `zenml login {server}`."
+            )
+        connect_to_server(server)
+        return
+
+    try:
+        server_id = uuid.UUID(server)
+    except ValueError:
+        pass
+    else:
+        # Look up the server by ID
+        servers = [s for s in servers if s.id == server_id]
+        if not servers or not servers[0].url:
+            cli_utils.error(f"No ZenML Pro server found with ID '{server}'.")
+        connect_to_pro_server(servers[0])
+        return
+
+    # Look up the server by name
+    servers = [s for s in servers if s.name == server]
+    if len(servers) > 1:
+        cli_utils.error(
+            f"Multiple ZenML Pro servers found with name '{server}' in "
+            "multiple organizations. Please specify the server by ID "
+            f"or URL instead: {', '.join([str(s.id) for s in servers])}"
+        )
+    if not servers:
+        cli_utils.error(f"No ZenML Pro server found with name '{server}'.")
+    connect_to_pro_server(servers[0])

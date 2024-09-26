@@ -34,7 +34,7 @@ from requests.adapters import HTTPAdapter, Retry
 from zenml.analytics import source_context
 from zenml.exceptions import AuthorizationException
 from zenml.logger import get_logger
-from zenml.login.constants import ZENML_PRO_API_URL
+from zenml.login.pro.constants import ZENML_PRO_API_URL
 from zenml.login.pro.models import BaseRestAPIModel
 from zenml.login.token import APIToken
 from zenml.login.token_cache import get_token_cache
