@@ -1,7 +1,4 @@
-ARG BASE_REPO="bcdurak"
-ARG ZENML_VERSION
-
-FROM ${BASE_REPO}/zenml:release-base AS base
+FROM zenmldocker/prepare-release:base AS base
 
 # Set the working directory
 WORKDIR /app

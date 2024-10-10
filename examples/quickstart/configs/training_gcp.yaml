@@ -3,7 +3,7 @@ enable_cache: True
 # Environment configuration
 settings:
   docker:
-    parent_image: "zenmldocker/prepare-release:quickstart-azure"
+    parent_image: "zenmldocker/prepare-release:quickstart-gcp"
     skip_build: True
     requirements: requirements.txt
 # Uncomment the following two lines to specify the accelerator for your vertex orchestrator
